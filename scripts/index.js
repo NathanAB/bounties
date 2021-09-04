@@ -26,12 +26,12 @@ module.exports = async function main (callback) {
     // console.log(await bounty.balanceOf(accounts[0]));
 
     // // console.log(await bounty.getBountyRequirements(0));
-    // console.log(await bounty.getBountyRequirementsText(0));
-    // // console.log(await bounty.getBountyReward(0));
-    // console.log(await bounty.getBountyRequirementsText(1));
-    // // console.log(await bounty.getBountyReward(1));
-    // console.log(await bounty.getBountyRequirementsText(2));
-    // // console.log(await bounty.getBountyReward(2));
+    console.log(await bounty.getBountyRequirementsText(0));
+    console.log(await bounty.getBountyReward(0));
+    console.log(await bounty.getBountyRequirementsText(1));
+    console.log(await bounty.getBountyReward(1));
+    console.log(await bounty.getBountyRequirementsText(2));
+    console.log(await bounty.getBountyReward(2));
 
     await gold.approve(bounty.address, 10000000);
     console.log(await gold.allowance(accounts[0], bounty.address));

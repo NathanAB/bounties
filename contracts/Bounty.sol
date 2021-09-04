@@ -67,28 +67,13 @@ contract Bounty is
         ][itemType](seed);
     }
 
-    function getItemRarity(uint256[6] memory itemComponents)
-        private
-        pure
-        returns (uint256)
-    {
-        if (itemComponents[4] > 0) {
-            return 5;
-        }
-        if (itemComponents[3] > 0) {
-            return 3;
-        }
-        if (itemComponents[1] > 0) {
-            return 2;
-        }
-        return 1;
-    }
-
     function getBountyReward(uint256 tokenId) public view returns (uint256) {
         uint256[6][25] memory reqs = getBountyRequirements(tokenId);
         uint256 reward = 0;
         for (uint256 i = 0; i < 25; i += 1) {
-            reward += getItemRarity(reqs[i]);
+            if (reqs[i][5] > 0) {
+                reward += 100;
+            }
         }
         return reward;
     }
