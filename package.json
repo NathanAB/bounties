@@ -21,5 +21,9 @@
     "@openzeppelin/contracts-upgradeable": "^4.3.1",
     "ganache-cli": "^6.12.2",
     "truffle": "^5.1.65"
+  },
+  "devDependencies": {
+    "bignumber.js": "^8.1.1",
+    "chai-as-promised": "^7.1.1"
   }
 }

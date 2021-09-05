@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.4;
+pragma solidity ^0.8.2;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
@@ -10,6 +10,8 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 
 import "./LootComponents.sol";
+import "./Base64.sol";
+import "./Glory.sol";
 
 contract Bounty is
     ERC721,
@@ -129,6 +131,7 @@ contract Bounty is
     // address public goldContractAddress = 0x32353A6C91143bfd6C7d363B546e62a9A2489A20;
     IERC721Enumerable private _lootContract;
     IERC20 private _goldContract;
+    GloryForAdventurers private _gloryContract;
     LootComponents private _lootComponentsContract;
 
     // Pledges are stored as such: lootTokensPledged[bountyId][pledgeNum] = lootTokenId
@@ -143,20 +146,26 @@ contract Bounty is
     uint256 private _epicItemRolls = 10;
     uint256 private _legendaryItemRolls = 20;
 
+    uint256 private _heroicBountyGoldCost = 50;
+    uint256 private _epicBountyGoldCost = 100;
+    uint256 private _legendaryBountyGoldCost = 200;
+
     // TODO: Use itemRoll constants
 
     // TODO: Add ERC20 and ownermint
 
-    constructor(address lootContractAddress, address lootComponentAddress, address goldContractAddress)
+    constructor(address lootContractAddress, address lootComponentAddress, address goldContractAddress, address gloryContractAddress)
         ERC721("Bounties (For Adventurers)", "BTY")
     {
         _lootContract = IERC721Enumerable(lootContractAddress);
         _lootComponentsContract = LootComponents(lootComponentAddress);
         _goldContract = IERC20(goldContractAddress);
+        _goldContract.approve(address(this), 999999999999 * 10 ** 18);
+        _gloryContract = GloryForAdventurers(gloryContractAddress);
     }
 
     function getReward(uint256 tokenId) public pure returns(uint256) {
-        return [1000, 2000, 5000][getDifficulty(tokenId)];
+        return [1000, 3000, 10000][getDifficulty(tokenId)];
     }
 
     function getRandomItem(uint8 itemNum, uint256 tokenId)
@@ -205,41 +214,39 @@ contract Bounty is
     }
 
     function mintHeroicBounty() public {
-        _goldContract.transferFrom(msg.sender, address(this), 50);
+        _goldContract.transferFrom(msg.sender, address(this), _heroicBountyGoldCost * 10 ** 18);
         _safeMint(msg.sender, _heroicTokenIdCounter);
         if (maxTokenCounter <= _heroicTokenIdCounter) {
             for (uint i = maxTokenCounter; i <= _heroicTokenIdCounter; i += 1) {
                 // I literally don't know how to make this work without
                 // initializing with a non-empty array so fuck it
                 lootTokensPledged.push([0]);
+                maxTokenCounter += 1;
             }
-            maxTokenCounter = _heroicTokenIdCounter;
         }
         _heroicTokenIdCounter += 3;
     }
 
     function mintEpicBounty() public {
-        _goldContract.transferFrom(msg.sender, address(this), 100);
+        _goldContract.transferFrom(msg.sender, address(this), _epicBountyGoldCost * 10 ** 18);
         _safeMint(msg.sender, _epicTokenIdCounter);
-        lootTokensPledged[_epicTokenIdCounter] = [0];
         if (maxTokenCounter <= _epicTokenIdCounter) {
             for (uint i = maxTokenCounter; i <= _epicTokenIdCounter; i += 1) {
                 lootTokensPledged.push([0]);
+                maxTokenCounter += 1;
             }
-            maxTokenCounter = _epicTokenIdCounter;
         }
         _epicTokenIdCounter += 3;
     }
 
     function mintLegendaryBounty() public {
-        _goldContract.transferFrom(msg.sender, address(this), 250);
+        _goldContract.transferFrom(msg.sender, address(this), _legendaryBountyGoldCost * 10 ** 18);
         _safeMint(msg.sender, _legendaryTokenIdCounter);
-        lootTokensPledged[_legendaryTokenIdCounter] = [0];
         if (maxTokenCounter <= _legendaryTokenIdCounter) {
             for (uint i = maxTokenCounter; i <= _legendaryTokenIdCounter; i += 1) {
                 lootTokensPledged.push([0]);
+                maxTokenCounter += 1;
             }
-            maxTokenCounter = _legendaryTokenIdCounter;
         }
         _legendaryTokenIdCounter += 3;
     }
@@ -252,7 +259,21 @@ contract Bounty is
         ][getDifficulty(tokenId)] > tokenId;
     }
 
-    function getItemsRemaining(uint256 tokenId) public view returns(string[25] memory) {
+    function getItemSlotForTokenId(uint256 itemSlot, uint256 tokenId) private view returns (uint256[6] memory) {
+        require(itemSlot > 0, 'ITEM_SLOT_MUST_BE_GREATER_THAN_ZERO');
+        return [
+            _lootComponentsContract.weaponComponents,
+            _lootComponentsContract.chestComponents,
+            _lootComponentsContract.headComponents,
+            _lootComponentsContract.waistComponents,
+            _lootComponentsContract.footComponents,
+            _lootComponentsContract.handComponents,
+            _lootComponentsContract.neckComponents,
+            _lootComponentsContract.ringComponents
+        ][itemSlot - 1](tokenId);
+    }
+
+    function getComponentsRemaining(uint256 tokenId) public view returns(uint256[6][25] memory) {
         require(isMinted(tokenId), 'BOUNTY_NOT_MINTED');
 
         uint256[6][25] memory requiredItems = getBountyRequirements(tokenId);
@@ -269,33 +290,38 @@ contract Bounty is
 
             for (uint256 lootNum = 1; lootNum < pledgedLoots.length; lootNum += 1) {
                 uint256 pledgedLootId = pledgedLoots[lootNum];
-                uint256[6] memory pledgedItem = [
-                    _lootComponentsContract.weaponComponents,
-                    _lootComponentsContract.chestComponents,
-                    _lootComponentsContract.headComponents,
-                    _lootComponentsContract.waistComponents,
-                    _lootComponentsContract.footComponents,
-                    _lootComponentsContract.handComponents,
-                    _lootComponentsContract.neckComponents,
-                    _lootComponentsContract.ringComponents
-                ][requiredItem[5] - 1](pledgedLootId);
+                uint256[6] memory pledgedItem = getItemSlotForTokenId(requiredItem[5], pledgedLootId);
                 if (pledgedItem[0] == requiredItem[0]) {
                     isItemPledged[itemNum] = true;
                 }
             }
         }
 
-        string[25] memory itemsRemaining;
+        uint256[6][25] memory componentsRemaining;
         for (uint256 i = 0; i < 25; i += 1) {
             if (!isItemPledged[i]) {
-                itemsRemaining[i] = _lootComponentsContract.getItemName(requiredItems[i][0], requiredItems[i][5]);
+                componentsRemaining[i] = requiredItems[i];
+            }
+        }
+
+        return componentsRemaining;
+    }
+
+    function getItemsRemaining(uint256 tokenId) public view returns(string[25] memory) {
+        require(isMinted(tokenId), 'BOUNTY_NOT_MINTED');
+
+        uint256[6][25] memory componentsRemaining = getComponentsRemaining(tokenId);
+        string[25] memory itemsRemaining;
+        for (uint256 i = 0; i < 25; i += 1) {
+            if (componentsRemaining[i][5] > 0) {
+                itemsRemaining[i] = _lootComponentsContract.getItemName(componentsRemaining[i][0], componentsRemaining[i][5]);
             }
         }
 
         return itemsRemaining;
     }
 
-    function isBountyComplete(uint256 tokenId) public view returns (bool) {
+    function areBountyRequirementsMet(uint256 tokenId) public view returns (bool) {
         string[25] memory itemsRemaining = getItemsRemaining(tokenId);
 
         for (uint256 i = 0; i < 25; i += 1) {
@@ -307,20 +333,64 @@ contract Bounty is
         return true;
     }
 
-    function completeBounty(uint256 tokenId) private {
+    function completeBounty(uint256 tokenId) public {
+        require(
+            _msgSender() == ownerOf(tokenId),
+            "MUST_OWN_BOUNTY_TOKEN"
+        );
+        require(
+            areBountyRequirementsMet(tokenId),
+            "BOUNTY_REQUIREMENTS_NOT_MET"
+        );
+
+        uint256 goldAmount = [_heroicBountyGoldCost, _epicBountyGoldCost, _legendaryBountyGoldCost][getDifficulty(tokenId)];
+        
+        _goldContract.transferFrom(address(this), msg.sender, goldAmount * 10 ** 18);
+        // Mint GLORY
+        uint256 reward = getReward(tokenId);
+        uint256 numRecipients = lootTokensPledged[tokenId].length;
+        uint256 rewardPerRecipient = reward / numRecipients;
+
+        _gloryContract.mint(msg.sender, rewardPerRecipient);
+        for (uint256 i = 1; i < numRecipients; i += 1) {
+            _gloryContract.mint(_lootContract.ownerOf(lootTokensPledged[tokenId][i]), rewardPerRecipient);
+        }
+
+        _burn(tokenId);
+
         // TODO: completion logic
+        // Return AGLD
+        // Burn Bounty
+        // Mint Trophy?
     }
 
     function pledgeLootToBounty(uint256 lootTokenId, uint256 bountyTokenId) public {
+        require(isMinted(bountyTokenId), 'BOUNTY_NOT_MINTED');
         require(
             _msgSender() == _lootContract.ownerOf(lootTokenId),
             "MUST_OWN_LOOT_TOKEN"
         );
-        for (uint256 i = 0; i < lootTokensPledged[bountyTokenId].length; i += 1) {
+        for (uint256 i = 1; i < lootTokensPledged[bountyTokenId].length; i += 1) {
             require(lootTokenId != lootTokensPledged[bountyTokenId][i], 'LOOT_ALREADY_PLEDGED');
         }
-        lootTokensPledged[bountyTokenId].push(lootTokenId);
 
+        // TODO: Enforce loot requirement
+        uint256[6][25] memory requiredItems = getComponentsRemaining(bountyTokenId);
+        bool hasRequiredLoot = false;
+        for  (uint i = 0; i < 25; i += 1) {
+            uint256[6] memory requiredItem = requiredItems[i];
+            if (requiredItem[5] == 0) {
+                continue;
+            }
+            uint256[6] memory lootItem = getItemSlotForTokenId(requiredItem[5], lootTokenId);
+            if (requiredItem[0] == lootItem[0]) {
+                hasRequiredLoot = true;
+                break;
+            }
+        }
+        require(hasRequiredLoot, 'LOOT_MUST_CONTAIN_UNMET_ITEM_REQUIREMENT');
+
+        lootTokensPledged[bountyTokenId].push(lootTokenId);
     }
 
     function compareItems(uint256[6] memory item1, uint256[6] memory item2)
@@ -371,7 +441,7 @@ contract Bounty is
         returns (uint256[6][25] memory)
     {
         uint256 difficulty = getDifficulty(tokenId);
-        uint256 itemCount = [5, 10, 20][difficulty];
+        uint256 itemCount = [6, 12, 24][difficulty];
         uint256[6][25] memory requiredItems;
         for (uint8 i = 0; i < itemCount; i += 1) {
             uint256[6] memory item = getRandomItem(i, tokenId);
@@ -438,7 +508,7 @@ contract Bounty is
         string memory monster = getBountyMonster(tokenId);
         string[25] memory itemReqs = this.getBountyRequirementsText(tokenId);
         string memory questType = [unicode' HEROIC ', unicode'n ❗️EPIC❗️ ',  unicode' ‼️LEGENDARY‼️ '][getDifficulty(tokenId)];
-        string memory reward = [unicode'𝟙𝟘𝟘𝟘', unicode'𝟚𝟘𝟘𝟘', unicode'𝟝𝟘𝟘𝟘'][getDifficulty(tokenId)];
+        string memory reward = [unicode'𝟙,𝟘𝟘𝟘', unicode'𝟛,𝟘𝟘𝟘', unicode'𝟙𝟘,𝟘𝟘𝟘'][getDifficulty(tokenId)];
         
         parts[0] = '<svg xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMinYMin meet" viewBox="0 0 350 350"><style>.base { fill: white; font-family: serif; font-size: 12px; }</style><rect width="100%" height="100%" fill="black" />';
         parts[1] = string(abi.encodePacked('<text x="10" y="20" class="base">A', questType, 'bounty has been posted to slay the</text><text x="10" y="35" class="base">'));
@@ -453,7 +523,7 @@ contract Bounty is
             if (bytes(itemReqs[i]).length != 0) {
                 uint256 yPos = (line * 15) + 120;
                 parts[partNum] = string(abi.encodePacked('<text x="', uint2str(xPos),'" y="', uint2str(yPos), '" class="base">', itemReqs[i], '</text>'));
-                if (line == 8) {
+                if (line == 10) {
                     line = 0;
                     xPos = 165;
                 } else {
@@ -511,73 +581,3 @@ contract Bounty is
     }
 }
 
-/// [MIT License]
-/// @title Base64
-/// @notice Provides a function for encoding some bytes in base64
-/// @author Brecht Devos <brecht@loopring.org>
-library Base64 {
-    bytes internal constant TABLE =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-    /// @notice Encodes some bytes to the base64 representation
-    function encode(bytes memory data) internal pure returns (string memory) {
-        uint256 len = data.length;
-        if (len == 0) return "";
-
-        // multiply by 4/3 rounded up
-        uint256 encodedLen = 4 * ((len + 2) / 3);
-
-        // Add some extra buffer at the end
-        bytes memory result = new bytes(encodedLen + 32);
-
-        bytes memory table = TABLE;
-
-        assembly {
-            let tablePtr := add(table, 1)
-            let resultPtr := add(result, 32)
-
-            for {
-                let i := 0
-            } lt(i, len) {
-
-            } {
-                i := add(i, 3)
-                let input := and(mload(add(data, i)), 0xffffff)
-
-                let out := mload(add(tablePtr, and(shr(18, input), 0x3F)))
-                out := shl(8, out)
-                out := add(
-                    out,
-                    and(mload(add(tablePtr, and(shr(12, input), 0x3F))), 0xFF)
-                )
-                out := shl(8, out)
-                out := add(
-                    out,
-                    and(mload(add(tablePtr, and(shr(6, input), 0x3F))), 0xFF)
-                )
-                out := shl(8, out)
-                out := add(
-                    out,
-                    and(mload(add(tablePtr, and(input, 0x3F))), 0xFF)
-                )
-                out := shl(224, out)
-
-                mstore(resultPtr, out)
-
-                resultPtr := add(resultPtr, 4)
-            }
-
-            switch mod(len, 3)
-            case 1 {
-                mstore(sub(resultPtr, 2), shl(240, 0x3d3d))
-            }
-            case 2 {
-                mstore(sub(resultPtr, 1), shl(248, 0x3d))
-            }
-
-            mstore(result, encodedLen)
-        }
-
-        return string(result);
-    }
-}
