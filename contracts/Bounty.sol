@@ -132,9 +132,8 @@ contract Bounty is
     LootComponents private _lootComponentsContract;
 
     // Pledges are stored as such: lootTokensPledged[bountyId][pledgeNum] = lootTokenId
-    uint256[][] private _heroicLootPledged;
-    uint256[][] private _epicLootPledged;
-    uint256[][] private _legendaryLootPledged;
+    uint256[][] private lootTokensPledged;
+    uint256 private maxTokenCounter = 0;
 
     uint256 private _heroicTokenIdCounter = 0;
     uint256 private _epicTokenIdCounter = 1;
@@ -208,21 +207,40 @@ contract Bounty is
     function mintHeroicBounty() public {
         _goldContract.transferFrom(msg.sender, address(this), 50);
         _safeMint(msg.sender, _heroicTokenIdCounter);
-        _heroicLootPledged.push([uint256(0)]);
+        if (maxTokenCounter <= _heroicTokenIdCounter) {
+            for (uint i = maxTokenCounter; i <= _heroicTokenIdCounter; i += 1) {
+                // I literally don't know how to make this work without
+                // initializing with a non-empty array so fuck it
+                lootTokensPledged.push([0]);
+            }
+            maxTokenCounter = _heroicTokenIdCounter;
+        }
         _heroicTokenIdCounter += 3;
     }
 
     function mintEpicBounty() public {
         _goldContract.transferFrom(msg.sender, address(this), 100);
         _safeMint(msg.sender, _epicTokenIdCounter);
-        _epicLootPledged.push([0]);
+        lootTokensPledged[_epicTokenIdCounter] = [0];
+        if (maxTokenCounter <= _epicTokenIdCounter) {
+            for (uint i = maxTokenCounter; i <= _epicTokenIdCounter; i += 1) {
+                lootTokensPledged.push([0]);
+            }
+            maxTokenCounter = _epicTokenIdCounter;
+        }
         _epicTokenIdCounter += 3;
     }
 
     function mintLegendaryBounty() public {
         _goldContract.transferFrom(msg.sender, address(this), 250);
         _safeMint(msg.sender, _legendaryTokenIdCounter);
-        _legendaryLootPledged.push([0]);
+        lootTokensPledged[_legendaryTokenIdCounter] = [0];
+        if (maxTokenCounter <= _legendaryTokenIdCounter) {
+            for (uint i = maxTokenCounter; i <= _legendaryTokenIdCounter; i += 1) {
+                lootTokensPledged.push([0]);
+            }
+            maxTokenCounter = _legendaryTokenIdCounter;
+        }
         _legendaryTokenIdCounter += 3;
     }
 
@@ -234,20 +252,13 @@ contract Bounty is
         ][getDifficulty(tokenId)] > tokenId;
     }
 
-    // 0 1 2 = 0, 3 4 5 = 1, 6 7 8 = 2
-    function getPledgedLoots(uint256 tokenId) private view returns (uint256[] storage) {
-        return [_heroicLootPledged, _epicLootPledged, _legendaryLootPledged][getDifficulty(tokenId)][tokenId / 3];
-    }
-
     function getItemsRemaining(uint256 tokenId) public view returns(string[25] memory) {
         require(isMinted(tokenId), 'BOUNTY_NOT_MINTED');
 
         uint256[6][25] memory requiredItems = getBountyRequirements(tokenId);
         bool[25] memory isItemPledged;
-        uint256[] memory pledgedLoots = getPledgedLoots(tokenId);
-
         for (uint256 itemNum = 0; itemNum < 25; itemNum += 1) {
-            
+            uint256[] memory pledgedLoots = lootTokensPledged[tokenId];
             uint256[6] memory requiredItem = requiredItems[itemNum];
 
             // Skip if empty requirement
@@ -256,22 +267,22 @@ contract Bounty is
                 continue;
             }
 
-            // for (uint256 lootNum = 0; lootNum < pledgedLoots.length; lootNum += 1) {
-                // uint256 pledgedLootId = pledgedLoots[lootNum];
-                // uint256[6] memory pledgedItem = [
-                //     _lootComponentsContract.weaponComponents,
-                //     _lootComponentsContract.chestComponents,
-                //     _lootComponentsContract.headComponents,
-                //     _lootComponentsContract.waistComponents,
-                //     _lootComponentsContract.footComponents,
-                //     _lootComponentsContract.handComponents,
-                //     _lootComponentsContract.neckComponents,
-                //     _lootComponentsContract.ringComponents
-                // ][requiredItem[5] - 1](pledgedLootId);
-                // if (pledgedItem[0] == requiredItem[0]) {
-                //     isItemPledged[itemNum] = true;
-                // }
-            // }
+            for (uint256 lootNum = 1; lootNum < pledgedLoots.length; lootNum += 1) {
+                uint256 pledgedLootId = pledgedLoots[lootNum];
+                uint256[6] memory pledgedItem = [
+                    _lootComponentsContract.weaponComponents,
+                    _lootComponentsContract.chestComponents,
+                    _lootComponentsContract.headComponents,
+                    _lootComponentsContract.waistComponents,
+                    _lootComponentsContract.footComponents,
+                    _lootComponentsContract.handComponents,
+                    _lootComponentsContract.neckComponents,
+                    _lootComponentsContract.ringComponents
+                ][requiredItem[5] - 1](pledgedLootId);
+                if (pledgedItem[0] == requiredItem[0]) {
+                    isItemPledged[itemNum] = true;
+                }
+            }
         }
 
         string[25] memory itemsRemaining;
@@ -305,13 +316,10 @@ contract Bounty is
             _msgSender() == _lootContract.ownerOf(lootTokenId),
             "MUST_OWN_LOOT_TOKEN"
         );
-
-        uint256[] storage lootTokensPledged = getPledgedLoots(bountyTokenId);
-
-        for (uint256 i = 0; i < lootTokensPledged.length; i += 1) {
-            require(lootTokenId != lootTokensPledged[i], 'LOOT_ALREADY_PLEDGED');
+        for (uint256 i = 0; i < lootTokensPledged[bountyTokenId].length; i += 1) {
+            require(lootTokenId != lootTokensPledged[bountyTokenId][i], 'LOOT_ALREADY_PLEDGED');
         }
-        lootTokensPledged.push(lootTokenId);
+        lootTokensPledged[bountyTokenId].push(lootTokenId);
 
     }
 
