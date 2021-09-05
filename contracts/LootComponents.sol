@@ -23,6 +23,14 @@
         [3] = Name Suffix ID (0 for none)
         [4] = Augmentation (0 = false, 1 = true)
         [5] = Item Slot (1-8, 0 reserved for null state)
+            weapons - 1
+            chestArmor - 2
+            headArmor - 3
+            waistArmor - 4
+            footArmor - 5
+            handArmor - 6
+            necklaces - 7
+            rings - 8
     
     See the item and attribute tables below for corresponding IDs.
 

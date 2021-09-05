@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.2;
+pragma solidity ^0.8.4;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
@@ -18,30 +18,146 @@ contract Bounty is
     ERC721Burnable,
     Ownable
 {
+    string[] Prefixes = [
+        "VENGEFUL",
+        "CORRUPTED",
+        "RAVENOUS",
+        "FORSAKEN",
+        "INFERNAL",
+        "POSSESSED",
+        "VICIOUS",
+        "RABID",
+        "MADDENED",
+        "BLOODTHIRSTY",
+        "PUTRID",
+        "GRISLY",
+        "MUTANT",
+        "SAVAGE",
+        "WRETCHED",
+        "FERAL",
+        "ANCIENT",
+        "BEWITCHED"
+    ];
+
+    string[] HeroicMonsters = [
+        "RAPTOR",
+        "MANDRAGORA",
+        "SALAMANDER",
+        "FIEND",
+        "BANSHEE",
+        "PHOENIX",
+        "ICE SPIDER",
+        "LEPRECHAUN",
+        "IMP",
+        "SABRETOOTH",
+        "TROLL",
+        "DRAUGR",
+        "ZOMBIE",
+        "GHOUL",
+        "GHOST",
+        "HELLHOUND",
+        "DEEP GNOME",
+        "GOBLIN",
+        "SATYR",
+        "KOBOLD",
+        "DRYAD",
+        "ORC",
+        "WIGHT",
+        "YETI",
+        "SPIDER MONKEY"
+    ];
+
+    string[] EpicMonsters = [
+        "OWLBEAR",
+        "HAG",
+        "OGRE",
+        "SEA SERPENT",
+        "WITCH",
+        "WRAITH",
+        "WURM",
+        "WYVERN",
+        "GRIFFIN",
+        "HIPPOGRIFF",
+        "BUGBEAR",
+        "INCUBUS",
+        "DEMON",
+        "CHUPACABRA",
+        "ALIEN",
+        "VAMPIRE",
+        "WEREWOLF",
+        "SASQUATCH",
+        "ENT",
+        "CENTAUR",
+        "COCKATRICE",
+        "GOLEM",
+        "DARK ELF",
+        "HOBGOBLIN",
+        "MINOTAUR",
+        "NECROMANCER",
+        "STONE GIANT",
+        "FROST GIANT",
+        "HILL GIANT"
+    ];
+
+    string[] LegendaryMonsters = [
+        "DRAGON",
+        "BASILISK",
+        "DRAGON TURTLE",
+        "MANBEARPIG",
+        "LEVIATHAN",
+        "CHIMERA",
+        "HYDRA",
+        "SPHINX",
+        "GORGON",
+        "ABADDON",
+        "KRAKEN",
+        "MANTICORE",
+        "PIT FIEND",
+        "CLOUD GIANT",
+        "STORM GIANT",
+        "FIRE GIANT",
+        "MEDUSA",
+        "ARCHMAGE",
+        "LICH",
+        "DJINN",
+        "REVENANT",
+        "DEVOURER"
+    ];
+
     // Loot contract is available at https://etherscan.io/address/0xff9c1b15b16263c61d017ee9f65c50e4ae0113d7
     // address public lootContractAddress = 0xFF9C1b15B16263C61d017ee9F65C50e4AE0113D7;
     // address public goldContractAddress = 0x32353A6C91143bfd6C7d363B546e62a9A2489A20;
     IERC721Enumerable private _lootContract;
     IERC20 private _goldContract;
-    LootComponents private _lootComponentContract;
+    LootComponents private _lootComponentsContract;
 
-    // struct Pledge {
-    //     address pledger;
-    //     uint256 lootTokenId;
-    // }
-
-    // Pledge[][] private pledges;
+    // Pledges are stored as such: lootTokensPledged[bountyId][pledgeNum] = lootTokenId
+    uint256[][] private _heroicLootPledged;
+    uint256[][] private _epicLootPledged;
+    uint256[][] private _legendaryLootPledged;
 
     uint256 private _heroicTokenIdCounter = 0;
     uint256 private _epicTokenIdCounter = 1;
     uint256 private _legendaryTokenIdCounter = 2;
 
+    uint256 private _heroicItemRolls = 5;
+    uint256 private _epicItemRolls = 10;
+    uint256 private _legendaryItemRolls = 20;
+
+    // TODO: Use itemRoll constants
+
+    // TODO: Add ERC20 and ownermint
+
     constructor(address lootContractAddress, address lootComponentAddress, address goldContractAddress)
-        ERC721("Bounty", "BTY")
+        ERC721("Bounties (For Adventurers)", "BTY")
     {
         _lootContract = IERC721Enumerable(lootContractAddress);
-        _lootComponentContract = LootComponents(lootComponentAddress);
+        _lootComponentsContract = LootComponents(lootComponentAddress);
         _goldContract = IERC20(goldContractAddress);
+    }
+
+    function getReward(uint256 tokenId) public pure returns(uint256) {
+        return [1000, 2000, 5000][getDifficulty(tokenId)];
     }
 
     function getRandomItem(uint8 itemNum, uint256 tokenId)
@@ -56,62 +172,147 @@ contract Bounty is
         uint256 seed = tokenId * itemNum;
         return
         [
-            _lootComponentContract.weaponComponents,
-            _lootComponentContract.chestComponents,
-            _lootComponentContract.headComponents,
-            _lootComponentContract.waistComponents,
-            _lootComponentContract.footComponents,
-            _lootComponentContract.handComponents,
-            _lootComponentContract.neckComponents,
-            _lootComponentContract.ringComponents
+            _lootComponentsContract.weaponComponents,
+            _lootComponentsContract.chestComponents,
+            _lootComponentsContract.headComponents,
+            _lootComponentsContract.waistComponents,
+            _lootComponentsContract.footComponents,
+            _lootComponentsContract.handComponents,
+            _lootComponentsContract.neckComponents,
+            _lootComponentsContract.ringComponents
         ][itemType](seed);
     }
 
-    function getBountyReward(uint256 tokenId) public view returns (uint256) {
-        uint256[6][25] memory reqs = getBountyRequirements(tokenId);
-        uint256 reward = 0;
-        for (uint256 i = 0; i < 25; i += 1) {
-            if (reqs[i][5] > 0) {
-                reward += 100;
-            }
+    function getBountyMonster(uint256 tokenId) public view returns (string memory) {
+        uint256 rand1 = random(
+            string(abi.encodePacked(toString(tokenId)))
+        );
+        uint256 rand2 = random(
+            string(abi.encodePacked(toString(tokenId * tokenId)))
+        );
+        uint256 difficulty = getDifficulty(tokenId);
+        uint256 prefixIndex = rand1 % Prefixes.length;
+        uint256 monsterIndex;
+        if (difficulty == 0) {
+            monsterIndex = rand2 % HeroicMonsters.length;
+            return string(abi.encodePacked(Prefixes[prefixIndex], ' ', HeroicMonsters[monsterIndex]));
         }
-        return reward;
+        if (difficulty == 1) {
+            monsterIndex = rand2 % EpicMonsters.length;
+            return string(abi.encodePacked(Prefixes[prefixIndex], ' ', EpicMonsters[monsterIndex]));
+        }
+        monsterIndex = rand2 % LegendaryMonsters.length;
+        return string(abi.encodePacked(Prefixes[prefixIndex], ' ', LegendaryMonsters[monsterIndex]));
     }
 
     function mintHeroicBounty() public {
         _goldContract.transferFrom(msg.sender, address(this), 50);
         _safeMint(msg.sender, _heroicTokenIdCounter);
+        _heroicLootPledged.push([uint256(0)]);
         _heroicTokenIdCounter += 3;
     }
 
     function mintEpicBounty() public {
         _goldContract.transferFrom(msg.sender, address(this), 100);
         _safeMint(msg.sender, _epicTokenIdCounter);
+        _epicLootPledged.push([0]);
         _epicTokenIdCounter += 3;
     }
 
     function mintLegendaryBounty() public {
         _goldContract.transferFrom(msg.sender, address(this), 250);
         _safeMint(msg.sender, _legendaryTokenIdCounter);
+        _legendaryLootPledged.push([0]);
         _legendaryTokenIdCounter += 3;
     }
 
-    function pledgeToBounty(uint256 bountyId, uint256 lootId) public {
+    function isMinted(uint256 tokenId) public view returns (bool) {
+        return [
+            _heroicTokenIdCounter,
+            _epicTokenIdCounter,
+            _legendaryTokenIdCounter
+        ][getDifficulty(tokenId)] > tokenId;
+    }
+
+    // 0 1 2 = 0, 3 4 5 = 1, 6 7 8 = 2
+    function getPledgedLoots(uint256 tokenId) private view returns (uint256[] storage) {
+        return [_heroicLootPledged, _epicLootPledged, _legendaryLootPledged][getDifficulty(tokenId)][tokenId / 3];
+    }
+
+    function getItemsRemaining(uint256 tokenId) public view returns(string[25] memory) {
+        require(isMinted(tokenId), 'BOUNTY_NOT_MINTED');
+
+        uint256[6][25] memory requiredItems = getBountyRequirements(tokenId);
+        bool[25] memory isItemPledged;
+        uint256[] memory pledgedLoots = getPledgedLoots(tokenId);
+
+        for (uint256 itemNum = 0; itemNum < 25; itemNum += 1) {
+            
+            uint256[6] memory requiredItem = requiredItems[itemNum];
+
+            // Skip if empty requirement
+            if (requiredItem[5] == 0) {
+                isItemPledged[itemNum] = true;
+                continue;
+            }
+
+            // for (uint256 lootNum = 0; lootNum < pledgedLoots.length; lootNum += 1) {
+                // uint256 pledgedLootId = pledgedLoots[lootNum];
+                // uint256[6] memory pledgedItem = [
+                //     _lootComponentsContract.weaponComponents,
+                //     _lootComponentsContract.chestComponents,
+                //     _lootComponentsContract.headComponents,
+                //     _lootComponentsContract.waistComponents,
+                //     _lootComponentsContract.footComponents,
+                //     _lootComponentsContract.handComponents,
+                //     _lootComponentsContract.neckComponents,
+                //     _lootComponentsContract.ringComponents
+                // ][requiredItem[5] - 1](pledgedLootId);
+                // if (pledgedItem[0] == requiredItem[0]) {
+                //     isItemPledged[itemNum] = true;
+                // }
+            // }
+        }
+
+        string[25] memory itemsRemaining;
+        for (uint256 i = 0; i < 25; i += 1) {
+            if (!isItemPledged[i]) {
+                itemsRemaining[i] = _lootComponentsContract.getItemName(requiredItems[i][0], requiredItems[i][5]);
+            }
+        }
+
+        return itemsRemaining;
+    }
+
+    function isBountyComplete(uint256 tokenId) public view returns (bool) {
+        string[25] memory itemsRemaining = getItemsRemaining(tokenId);
+
+        for (uint256 i = 0; i < 25; i += 1) {
+            if (bytes(itemsRemaining[i]).length > 0) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    function completeBounty(uint256 tokenId) private {
+        // TODO: completion logic
+    }
+
+    function pledgeLootToBounty(uint256 lootTokenId, uint256 bountyTokenId) public {
         require(
-            _msgSender() == _lootContract.ownerOf(lootId),
+            _msgSender() == _lootContract.ownerOf(lootTokenId),
             "MUST_OWN_LOOT_TOKEN"
         );
-        // string[25] memory requirements = getBountyRequirements(bountyId);
-        // string[8] memory senderLoot = [
-        //     loot.weaponComponents(lootId),
-        //     loot.chestComponents(lootId),
-        //     loot.headComponents(lootId),
-        //     loot.waistComponents(lootId),
-        //     loot.footComponents(lootId),
-        //     loot.handComponents(lootId),
-        //     loot.neckComponents(lootId),
-        //     loot.ringComponents(lootId)
-        // ];
+
+        uint256[] storage lootTokensPledged = getPledgedLoots(bountyTokenId);
+
+        for (uint256 i = 0; i < lootTokensPledged.length; i += 1) {
+            require(lootTokenId != lootTokensPledged[i], 'LOOT_ALREADY_PLEDGED');
+        }
+        lootTokensPledged.push(lootTokenId);
+
     }
 
     function compareItems(uint256[6] memory item1, uint256[6] memory item2)
@@ -125,10 +326,6 @@ contract Bounty is
             item1[2] == item2[2] &&
             item1[3] == item2[3] &&
             item1[4] == item2[4];
-    }
-
-    function approve() public {
-        _goldContract.approve(msg.sender, 1000000000000000000);
     }
 
     function getDifficulty(uint256 tokenId) internal pure returns (uint256) {
@@ -194,69 +391,84 @@ contract Bounty is
         string[25] memory reqStrings;
         for (uint i = 0; i < 25; i += 1) {
             if (reqs[i][5] > 0) {
-                reqStrings[i] = _lootComponentContract.getItemName(reqs[i][0], reqs[i][5]);
+                reqStrings[i] = _lootComponentsContract.getItemName(reqs[i][0], reqs[i][5]);
             }
         }
         return reqStrings;
     }
 
+    function uint2str(uint _i) internal pure returns (string memory _uintAsString) {
+        if (_i == 0) {
+            return "0";
+        }
+        uint j = _i;
+        uint len;
+        while (j != 0) {
+            len++;
+            j /= 10;
+        }
+        bytes memory bstr = new bytes(len);
+        uint k = len;
+        while (_i != 0) {
+            k = k-1;
+            uint8 temp = (48 + uint8(_i - _i / 10 * 10));
+            bytes1 b1 = bytes1(temp);
+            bstr[k] = b1;
+            _i /= 10;
+        }
+        return string(bstr);
+    }
+
+    // TODO: Add bounty type to attributes array and name
     function tokenURI(uint256 tokenId)
         public
         view
         override(ERC721, ERC721URIStorage)
         returns (string memory)
     {
-        // string[17] memory parts;
-        // parts[0] = '<svg xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMinYMin meet" viewBox="0 0 350 350"><style>.base { fill: white; font-family: serif; font-size: 14px; }</style><rect width="100%" height="100%" fill="black" /><text x="10" y="20" class="base">';
+        string[31] memory parts;
+        string memory monster = getBountyMonster(tokenId);
+        string[25] memory itemReqs = this.getBountyRequirementsText(tokenId);
+        string memory questType = [unicode' HEROIC ', unicode'n ❗️EPIC❗️ ',  unicode' ‼️LEGENDARY‼️ '][getDifficulty(tokenId)];
+        string memory reward = [unicode'𝟙𝟘𝟘𝟘', unicode'𝟚𝟘𝟘𝟘', unicode'𝟝𝟘𝟘𝟘'][getDifficulty(tokenId)];
+        
+        parts[0] = '<svg xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMinYMin meet" viewBox="0 0 350 350"><style>.base { fill: white; font-family: serif; font-size: 12px; }</style><rect width="100%" height="100%" fill="black" />';
+        parts[1] = string(abi.encodePacked('<text x="10" y="20" class="base">A', questType, 'bounty has been posted to slay the</text><text x="10" y="35" class="base">'));
+        parts[2] = monster;
+        parts[3] = ' terrorizing our lands!</text><text x="10" y="70" class="base">';
+        parts[4] = 'To complete the bounty, gather your fellow adventurers</text><text x="10" y="85" class="base">who hold the required items:</text>';
 
-        // parts[1] = getWeapon(tokenId);
+        uint256 line = 0;
+        uint256 xPos = 10;
+        for (uint256 i = 0; i < 25; i += 1) {
+            uint256 partNum = i + 5;
+            if (bytes(itemReqs[i]).length != 0) {
+                uint256 yPos = (line * 15) + 120;
+                parts[partNum] = string(abi.encodePacked('<text x="', uint2str(xPos),'" y="', uint2str(yPos), '" class="base">', itemReqs[i], '</text>'));
+                if (line == 8) {
+                    line = 0;
+                    xPos = 165;
+                } else {
+                    line += 1;
+                }
+            } else {
+                parts[partNum] = '';
+            }
+        }
 
-        // parts[2] = '</text><text x="10" y="40" class="base">';
+        parts[30] = string(abi.encodePacked(unicode'<text x="10" y="330" class="base">A reward of ✨', reward, unicode' 𝔾𝕃𝕆ℝ𝕐✨ shall be split among the party.</text></svg>'));
+        string memory output = string(abi.encodePacked(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6], parts[7], parts[8]));
+        output = string(abi.encodePacked(output, parts[9], parts[10], parts[11], parts[12], parts[13], parts[14], parts[15], parts[16]));
+        output = string(abi.encodePacked(output, parts[17], parts[18], parts[19], parts[20], parts[21], parts[22], parts[23], parts[24]));
+        output = string(abi.encodePacked(output, parts[25], parts[26], parts[27], parts[28], parts[29], parts[30]));
 
-        // parts[3] = getChest(tokenId);
-
-        // parts[4] = '</text><text x="10" y="60" class="base">';
-
-        // parts[5] = getHead(tokenId);
-
-        // parts[6] = '</text><text x="10" y="80" class="base">';
-
-        // parts[7] = getWaist(tokenId);
-
-        // parts[8] = '</text><text x="10" y="100" class="base">';
-
-        // parts[9] = getFoot(tokenId);
-
-        // parts[10] = '</text><text x="10" y="120" class="base">';
-
-        // parts[11] = getHand(tokenId);
-
-        // parts[12] = '</text><text x="10" y="140" class="base">';
-
-        // parts[13] = getNeck(tokenId);
-
-        // parts[14] = '</text><text x="10" y="160" class="base">';
-
-        // parts[15] = getRing(tokenId);
-
-        // parts[16] = '</text></svg>';
-
-        // string memory output = string(abi.encodePacked(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6], parts[7], parts[8]));
-        // output = string(abi.encodePacked(output, parts[9], parts[10], parts[11], parts[12], parts[13], parts[14], parts[15], parts[16]));
-
-        // string memory json = Base64.encode(bytes(string(abi.encodePacked('{"name": "Bag #', toString(tokenId), '", "description": "Loot is randomized adventurer gear generated and stored on chain. Stats, images, and other functionality are intentionally omitted for others to interpret. Feel free to use Loot in any way you want.", "image": "data:image/svg+xml;base64,', Base64.encode(bytes(output)), '"}'))));
-        // output = string(abi.encodePacked('data:application/json;base64,', json));
-
-        // return output;
-
-        string memory output;
         string memory json = Base64.encode(
             bytes(
                 string(
                     abi.encodePacked(
                         '{"name": "Bounty #',
                         toString(tokenId),
-                        '", "description": "Bounties are deeds that can be redeemed for glory when multiple loot holders coordinate to complete the requirements.", "image": "data:image/svg+xml;base64,',
+                        '", "description": "Bounties can be redeemed for glory when multiple adventurers coordinate to complete the requirements.", "image": "data:image/svg+xml;base64,',
                         Base64.encode(bytes(output)),
                         '"}'
                     )
